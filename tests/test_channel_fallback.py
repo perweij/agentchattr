@@ -10,12 +10,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-import mcp_bridge
-
-
+from agentchattr import mcp_bridge
 class ChannelFallbackStateTests(unittest.TestCase):
     """Tests the in-memory state tracking that powers the fallback.
 

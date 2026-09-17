@@ -13,19 +13,15 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-import app
-import mcp_bridge
-import mcp_proxy
-import wrapper
-import wrapper_unix
-if sys.platform == "win32":
-    import wrapper_windows
+from agentchattr import app
+from agentchattr import mcp_bridge
+from agentchattr import mcp_proxy
+from agentchattr import wrapper
+from agentchattr import wrapper_unix
 from mcp.server.fastmcp import Context
-from registry import RuntimeRegistry
-from store import MessageStore
+from agentchattr.registry import RuntimeRegistry
+from agentchattr.store import MessageStore
 
 
 class FakeRequest:
@@ -390,28 +386,6 @@ class WrapperUnixLifecycleTests(unittest.TestCase):
         ]
         self.assertEqual(len(has_session_checks), 3)
         self.assertEqual(sleep_calls, [1])
-
-
-@unittest.skipUnless(sys.platform == "win32", "Windows-only wrapper compatibility test")
-class WrapperWindowsCompatibilityTests(unittest.TestCase):
-    def test_run_agent_accepts_session_name_kwarg(self):
-        fake_proc = mock.Mock()
-        fake_proc.pid = 1234
-        fake_proc.returncode = 0
-        fake_proc.wait.return_value = 0
-
-        with mock.patch.object(wrapper_windows.subprocess, "Popen", return_value=fake_proc):
-            wrapper_windows.run_agent(
-                command="codex",
-                extra_args=[],
-                cwd=".",
-                env={},
-                queue_file=Path("queue.jsonl"),
-                agent="codex",
-                no_restart=True,
-                start_watcher=lambda inject_fn: None,
-                session_name=None,
-            )
 
 
 class ProxyHeaderForwardingTests(unittest.TestCase):

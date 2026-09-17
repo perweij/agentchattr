@@ -10,15 +10,13 @@ from pathlib import Path
 from fastapi import UploadFile
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-import app
-import archive
-from jobs import JobStore
-from rules import RuleStore
-from store import MessageStore
-from summaries import SummaryStore
+from agentchattr import app
+from agentchattr import archive
+from agentchattr.jobs import JobStore
+from agentchattr.rules import RuleStore
+from agentchattr.store import MessageStore
+from agentchattr.summaries import SummaryStore
 
 
 def make_stores(root: Path):

@@ -8,10 +8,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from schedules import ScheduleStore
+from agentchattr.schedules import ScheduleStore
 
 
 def _store():
@@ -196,8 +194,7 @@ class _FakeRequest:
 
 class CreateEndpointTests(unittest.TestCase):
     def setUp(self):
-        import app
-
+        from agentchattr import app
         self.app = app
         self._saved = app.schedules
         app.schedules = _store()
@@ -241,8 +238,7 @@ class RelativeSendAtTests(unittest.TestCase):
     """
 
     def setUp(self):
-        import app
-
+        from agentchattr import app
         self.app = app
         self._saved = app.schedules
         app.schedules = _store()

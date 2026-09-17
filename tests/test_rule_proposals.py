@@ -7,10 +7,9 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import app
-from rules import RuleStore
-from store import MessageStore
+from agentchattr import app
+from agentchattr.rules import RuleStore
+from agentchattr.store import MessageStore
 
 
 def proposal(stores):

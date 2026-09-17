@@ -1,0 +1,29 @@
+name: Checks
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked python -m unittest discover -s tests
+      - run: uv build
+      - name: Smoke-test the installed wheel outside the checkout
+        shell: bash
+        run: |
+          uv venv "$RUNNER_TEMP/agentchattr-wheel" --python "${{ matrix.python }}"
+          uv pip install --python "$RUNNER_TEMP/agentchattr-wheel/bin/python" dist/*.whl
+          "$RUNNER_TEMP/agentchattr-wheel/bin/agentchattr" --help
+          "$RUNNER_TEMP/agentchattr-wheel/bin/python" tests/test_server_smoke.py

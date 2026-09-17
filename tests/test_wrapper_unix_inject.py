@@ -7,10 +7,7 @@ import time
 import unittest
 from unittest import mock
 
-import wrapper_unix
-
-
-@unittest.skipIf(sys.platform == 'win32', 'Unix executable fixture')
+from agentchattr import wrapper_unix
 class InjectTimeoutTests(unittest.TestCase):
     def test_stuck_delivery_and_cleanup_return_without_retyping(self):
         with tempfile.TemporaryDirectory() as tmp:

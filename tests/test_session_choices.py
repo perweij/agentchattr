@@ -7,11 +7,10 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import app
-from session_engine import SessionEngine
-from session_store import SessionStore
-from store import MessageStore
+from agentchattr import app
+from agentchattr.session_engine import SessionEngine
+from agentchattr.session_store import SessionStore
+from agentchattr.store import MessageStore
 
 
 def setup_session(tmp_path, stack):
@@ -28,7 +27,7 @@ def setup_session(tmp_path, stack):
         result = Mock()
         result.start.side_effect = lambda: timers.append(lambda: callback(*args))
         return result
-    stack.enter_context(patch('session_engine.threading.Timer', timer))
+    stack.enter_context(patch('agentchattr.session_engine.threading.Timer', timer))
     stack.enter_context(patch.object(app, 'store', messages))
     stack.enter_context(patch.object(app, 'room_settings', {'username': 'Ben'}))
     stack.enter_context(patch.object(app, 'ws_clients', set()))

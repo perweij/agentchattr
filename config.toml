@@ -82,7 +82,6 @@ mcp_inject = "settings_file"
 mcp_settings_path = "~/.copilot/mcp-config.json"
 mcp_transport = "http"
 mcp_http_key = "url"
-enter_backend = "wm_setfocus"
 
 [agents.minimax]
 type = "api"
@@ -146,4 +145,4 @@ max_size_mb = 10
 #   # api_key_env = "MY_API_KEY"     # optional: env var name for API key
 #   # system_prompt = "You are ..."   # optional: custom system prompt
 #
-# Then run: python wrapper_api.py qwen
+# Then run: uv run agentchattr agent qwen

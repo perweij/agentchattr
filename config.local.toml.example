@@ -1,4 +1,4 @@
-# config.local.toml — local API agents (gitignored)
+# config.local.toml — personal overrides (gitignored)
 #
 # Copy this file to config.local.toml and uncomment/edit the sections below.
 # These agents connect to OpenAI-compatible endpoints (Ollama, llama-server,
@@ -7,9 +7,19 @@
 # Usage:
 #   1. cp config.local.toml.example config.local.toml
 #   2. Edit the [agents.NAME] section below
-#   3. Start the server: python run.py
-#   4. Start the wrapper: python wrapper_api.py NAME
-#      (or use: windows/start_api_agent.bat NAME)
+#   3. Start the server: uv run agentchattr serve
+#   4. Start the wrapper: uv run agentchattr agent NAME
+
+# Any setting, including built-in agents, can be overridden here.
+# Tables merge recursively; lists/scalars replace defaults.
+# Paths for data/uploads/cwd resolve against this file's directory.
+#
+# [agents.codex]
+# cwd = "/absolute/path/to/project"
+# label = "My Codex"
+#
+# [server]
+# port = 8310
 
 # --- Example: Qwen via llama-server ---
 # [agents.qwen]

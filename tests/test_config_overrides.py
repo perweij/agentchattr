@@ -6,15 +6,14 @@ same env vars produce the same config regardless of entry point.
 """
 
 import os
-import sys
+import tempfile
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-import config_loader  # noqa: E402
+from agentchattr import config_loader
 
 
 ENV_VARS = [
@@ -43,7 +42,7 @@ class ConfigOverrideTests(unittest.TestCase):
     def test_no_env_vars_uses_config_toml_values(self):
         config = config_loader.load_config(ROOT)
         self.assertEqual(config["server"]["port"], 8300)
-        self.assertEqual(config["server"]["data_dir"], "./data")
+        self.assertEqual(config["server"]["data_dir"], str(ROOT / "data"))
 
     def test_port_env_var_overrides_config(self):
         os.environ["AGENTCHATTR_PORT"] = "8310"
@@ -110,91 +109,64 @@ class ConfigOverrideTests(unittest.TestCase):
         self.assertEqual(config["agents"]["claude"]["command"], "claude")
 
 
-class CliOverrideExtractionTests(unittest.TestCase):
-    """apply_cli_overrides() extracts CLI flags into env vars.
-
-    This is the shared helper used by run.py, wrapper.py, and wrapper_api.py
-    so the same flags produce the same config regardless of entry point.
-    """
-
+class PersonalConfigTests(unittest.TestCase):
     def setUp(self):
-        self._saved = {k: os.environ.get(k) for k in ENV_VARS}
-        for k in ENV_VARS:
-            os.environ.pop(k, None)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.config = self.root / "custom.toml"
+        self.config.write_text('[server]\nport = 8300\ndata_dir = "state"\n'
+                               '[agents.codex]\ncommand = "codex"\ncwd = "project"\n'
+                               'tags = ["original"]\n')
+        self.env = patch.dict(os.environ, {}, clear=True)
+        self.env.start()
+        self.addCleanup(self.env.stop)
 
-    def tearDown(self):
-        for k, v in self._saved.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+    def test_recursive_local_merge_preserves_siblings_and_replaces_lists(self):
+        (self.root / "config.local.toml").write_text(
+            '[server]\nport = 8311\n'
+            '[agents.codex]\nlabel = "My agent"\ntags = ["replacement"]\n'
+            '[agents.local]\ntype = "api"\nmodel = "test"\n')
+        config = config_loader.load_config(config_path=self.config)
+        self.assertEqual(config["server"]["port"], 8311)
+        self.assertEqual(config["server"]["data_dir"], str(self.root / "state"))
+        self.assertEqual(config["agents"]["codex"]["command"], "codex")
+        self.assertEqual(config["agents"]["codex"]["label"], "My agent")
+        self.assertEqual(config["agents"]["codex"]["tags"], ["replacement"])
+        self.assertEqual(config["agents"]["local"]["type"], "api")
 
-    def test_space_separated_flags_set_env_vars(self):
-        argv = ["run.py", "--port", "8310", "--data-dir", "./foo"]
-        config_loader.apply_cli_overrides(argv)
-        self.assertEqual(os.environ["AGENTCHATTR_PORT"], "8310")
-        self.assertEqual(os.environ["AGENTCHATTR_DATA_DIR"], "./foo")
+    def test_cli_beats_environment_and_local_without_mutating_environment(self):
+        (self.root / "config.local.toml").write_text('[server]\nport = 8311\n')
+        os.environ["AGENTCHATTR_PORT"] = "8312"
+        config = config_loader.load_config(config_path=self.config, overrides={"port": 8313})
+        self.assertEqual(config["server"]["port"], 8313)
+        self.assertEqual(os.environ["AGENTCHATTR_PORT"], "8312")
 
-    def test_equals_form_flags_set_env_vars(self):
-        argv = ["run.py", "--port=8310", "--data-dir=./foo"]
-        config_loader.apply_cli_overrides(argv)
-        self.assertEqual(os.environ["AGENTCHATTR_PORT"], "8310")
-        self.assertEqual(os.environ["AGENTCHATTR_DATA_DIR"], "./foo")
+    def test_config_paths_resolve_against_config_directory(self):
+        config = config_loader.load_config(config_path=self.config)
+        self.assertEqual(config["server"]["data_dir"], str(self.root / "state"))
+        self.assertEqual(config["images"]["upload_dir"], str(self.root / "uploads"))
+        self.assertEqual(config["agents"]["codex"]["cwd"], str(self.root / "project"))
 
-    def test_missing_flags_do_not_touch_env(self):
-        argv = ["run.py"]
-        config_loader.apply_cli_overrides(argv)
-        for env in ENV_VARS:
-            self.assertNotIn(env, os.environ)
+    def test_cli_paths_resolve_against_invocation_directory(self):
+        config = config_loader.load_config(config_path=self.config,
+                                          overrides={"data_dir": "personal", "upload_dir": "images"})
+        self.assertEqual(config["server"]["data_dir"], str(Path.cwd() / "personal"))
+        self.assertEqual(config["images"]["upload_dir"], str(Path.cwd() / "images"))
 
-    def test_overrides_flow_through_to_load_config(self):
-        argv = ["run.py", "--port", "8315", "--mcp-http-port", "8215"]
-        config_loader.apply_cli_overrides(argv)
-        config = config_loader.load_config(ROOT)
-        self.assertEqual(config["server"]["port"], 8315)
-        self.assertEqual(config["mcp"]["http_port"], 8215)
+    def test_all_cli_overrides(self):
+        config = config_loader.load_config(config_path=self.config, overrides={
+            "port": 9000, "mcp_http_port": 9001, "mcp_sse_port": 9002,
+            "data_dir": str(self.root / "data"), "upload_dir": str(self.root / "images")})
+        self.assertEqual(config["server"]["port"], 9000)
+        self.assertEqual(config["mcp"], {"http_port": 9001, "sse_port": 9002})
+        self.assertEqual(config["server"]["data_dir"], str(self.root / "data"))
+        self.assertEqual(config["images"]["upload_dir"], str(self.root / "images"))
 
-    def test_all_five_flags_extracted(self):
-        argv = [
-            "run.py",
-            "--data-dir", "/tmp/proj",
-            "--port", "8310",
-            "--mcp-http-port", "8210",
-            "--mcp-sse-port", "8211",
-            "--upload-dir", "/tmp/proj-uploads",
-        ]
-        config_loader.apply_cli_overrides(argv)
-        self.assertEqual(os.environ["AGENTCHATTR_DATA_DIR"], "/tmp/proj")
-        self.assertEqual(os.environ["AGENTCHATTR_PORT"], "8310")
-        self.assertEqual(os.environ["AGENTCHATTR_MCP_HTTP_PORT"], "8210")
-        self.assertEqual(os.environ["AGENTCHATTR_MCP_SSE_PORT"], "8211")
-        self.assertEqual(os.environ["AGENTCHATTR_UPLOAD_DIR"], "/tmp/proj-uploads")
-
-    def test_pass_through_separator_ignores_later_flags(self):
-        # `-- --port 9999` belongs to the agent CLI, not agentchattr.
-        # Flags AFTER `--` must NOT leak into the env.
-        argv = [
-            "wrapper.py", "claude",
-            "--port", "8310",
-            "--",
-            "--port", "9999",
-            "--data-dir", "/agent-arg",
-        ]
-        config_loader.apply_cli_overrides(argv)
-        self.assertEqual(os.environ["AGENTCHATTR_PORT"], "8310")
-        self.assertNotIn("AGENTCHATTR_DATA_DIR", os.environ)
-
-    def test_pass_through_alone_ignores_everything(self):
-        # If agentchattr flags appear ONLY after `--`, none are applied.
-        argv = [
-            "wrapper.py", "claude",
-            "--",
-            "--port", "9999",
-            "--data-dir", "/agent-arg",
-        ]
-        config_loader.apply_cli_overrides(argv)
-        self.assertNotIn("AGENTCHATTR_PORT", os.environ)
-        self.assertNotIn("AGENTCHATTR_DATA_DIR", os.environ)
+    def test_home_paths_are_expanded(self):
+        os.environ["AGENTCHATTR_DATA_DIR"] = "~/state"
+        config = config_loader.load_config(config_path=self.config)
+        self.assertEqual(config["server"]["data_dir"], str(Path.home() / "state"))
 
 
 if __name__ == "__main__":

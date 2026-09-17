@@ -17,7 +17,7 @@ build/
 .gemini/
 .claude/
 agents_lineup.svg
-docs/
 goals.py
 pr-reviews/
 agentchattr-*.zip
+.ruff_cache/

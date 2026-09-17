@@ -26,14 +26,13 @@ import sys
 import tempfile
 import textwrap
 import time
+import uuid
 import unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
-import wrapper_unix  # noqa: E402
+from agentchattr import wrapper_unix
 
 OPEN = b"\x1b[200~"
 CLOSE = b"\x1b[201~"
@@ -100,10 +99,24 @@ def _wait_for(path: str, marker: bytes, timeout: float) -> bool:
     return False
 
 
-@unittest.skipIf(sys.platform == "win32", "tmux transport is unix-only")
 @unittest.skipUnless(HAVE_TMUX, "tmux not installed")
 class InjectTransportTests(unittest.TestCase):
     """Real tmux, real pty, raw-mode reader pane."""
+
+    def setUp(self):
+        # Keep transport fixtures away from the user's default tmux server.
+        socket_name = f"agentchattr-test-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        real_run = subprocess.run
+
+        def isolated_run(command, *args, **kwargs):
+            if command and command[0] == "tmux":
+                command = ["tmux", "-L", socket_name, *command[1:]]
+            return real_run(command, *args, **kwargs)
+
+        patcher = mock.patch.object(subprocess, "run", side_effect=isolated_run)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(subprocess.run, ["tmux", "kill-server"], capture_output=True)
 
     def _run(self, mode: str, payload: str, delay: float = 1.0):
         session = f"agentchattr-test-inject-{os.getpid()}-{mode}"

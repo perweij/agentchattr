@@ -3,7 +3,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from wrapper_unix import get_activity_checker
+from agentchattr.wrapper_unix import get_activity_checker
 
 
 def screen(body="Finished.", frame=0, prompt="Ask Codex to do anything"):
@@ -19,7 +19,7 @@ class ActivityTests(unittest.TestCase):
     def activity(self, frames, provider="codex"):
         checker = get_activity_checker("test", provider=provider)
         results = [subprocess.CompletedProcess([], 0, stdout=frame) for frame in frames]
-        with patch("wrapper_unix.subprocess.run", side_effect=results):
+        with patch("agentchattr.wrapper_unix.subprocess.run", side_effect=results):
             return [checker() for _ in frames]
 
     def test_idle_particles_do_not_count_as_work(self):
@@ -55,7 +55,7 @@ class ActivityTests(unittest.TestCase):
         trigger = [False]
         checker = get_activity_checker("test", trigger_flag=trigger, provider="codex")
         result = subprocess.CompletedProcess([], 0, stdout=screen())
-        with patch("wrapper_unix.subprocess.run", return_value=result):
+        with patch("agentchattr.wrapper_unix.subprocess.run", return_value=result):
             self.assertFalse(checker())
             trigger[0] = True
             self.assertTrue(checker())
