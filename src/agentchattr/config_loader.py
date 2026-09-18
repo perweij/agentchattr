@@ -88,6 +88,15 @@ def load_config(root: Path | None = None, *, config_path: Path | None = None,
     for agent in config.get("agents", {}).values():
         agent["cwd"] = _resolve_path(agent.get("cwd", "."), path.parent)
 
+    for name, agent in config.get("agents", {}).items():
+        transport = agent.get("transport", "tmux")
+        if transport not in ("tmux", "codex_native"):
+            raise ValueError(f"Unknown transport for {name}: {transport}")
+        if transport == "codex_native":
+            from agentchattr.wrapper import _provider_from_command
+            if agent.get("type") == "api" or _provider_from_command(agent.get("command", name)) != "codex":
+                raise ValueError("codex_native transport requires a Codex CLI agent")
+
     _apply_env_overrides(config)
     for flag, env in CLI_OVERRIDE_FLAGS:
         key = flag[2:].replace("-", "_")

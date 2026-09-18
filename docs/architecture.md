@@ -2,6 +2,8 @@
 
 This review covers the Python application, browser modules, persistence, launch workflow, and tests at upstream commit `d775776`, plus the foundation changes in this branch. It is based on source inspection and targeted execution, not a penetration test or a workload benchmark.
 
+Subsequent work added an opt-in [native Codex transport](native-codex.md): a wrapper-owned backend, an attachable terminal UI, and a separate durable SQLite notification queue. The tmux and JSONL paths described below remain the defaults.
+
 ## What the application does
 
 Agentchattr coordinates independently running agents. It does not host their reasoning or tools. The browser supplies a shared discussion surface; the wrappers translate forum mentions into terminal prompts or model API requests.

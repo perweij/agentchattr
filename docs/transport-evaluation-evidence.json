@@ -1,0 +1,149 @@
+{
+  "date": "2026-09-17",
+  "versions": {
+    "codex": "0.154.0",
+    "claude": "2.1.274",
+    "tmux": "3.4"
+  },
+  "method": "Real CLIs, isolated homes and working directory, dedicated tmux socket; loopback deterministic model stub; no paid model calls.",
+  "limits": [
+    "Main Codex probes used an unsandboxed backend because user namespace initialization failed.",
+    "Real approval-dialog behavior is not verified.",
+    "Claude channel availability was blocked in the dummy-auth isolated configuration; normal account availability is unknown.",
+    "Graceful restart observed; hard-crash durability not tested.",
+    "Evidence is selected and is not a reusable automated test suite."
+  ],
+  "codex": {
+    "queue_cli_stdout": "Queued message 01a0aefe-ec70-77c2-ac25-325b9061b5e3 for thread 01a0aefe-a4b8-7700-a354-a3f991446988.",
+    "conversation_requests_by_exact_final_user_message": {
+      "INITIAL_PROBE": 1,
+      "QUEUED_IDLE_PROBE": 1,
+      "BUSY_FIRST": 1,
+      "BUSY_SECOND": 1,
+      "DUPLICATE_PROBE": 2,
+      "NO_TUI_PROBE": 1,
+      "MANUAL_SECOND_PROBE": 1,
+      "SECOND_THREAD_ONLY": 1,
+      "RESTART2_INFLIGHT": 1,
+      "RESTART2_PENDING": 1
+    },
+    "queue_rpc_responses_busy_empty_and_duplicate": [
+      {
+        "id": 3,
+        "result": {
+          "data": [
+            {
+              "id": "01a0aeff-f262-7132-93e0-0b2d81a46440",
+              "input": [
+                {
+                  "type": "text",
+                  "text": "BUSY_SECOND",
+                  "text_elements": []
+                }
+              ],
+              "clientUserMessageId": "01a0aeff-f261-7282-b47f-97d94300a80c"
+            }
+          ],
+          "nextCursor": null
+        }
+      },
+      {
+        "id": 4,
+        "result": {
+          "data": [],
+          "nextCursor": null
+        }
+      },
+      {
+        "id": 5,
+        "result": {
+          "queuedSubmission": {
+            "id": "01a0af00-11e1-7722-a930-937552f848a3",
+            "input": [
+              {
+                "type": "text",
+                "text": "DUPLICATE_PROBE",
+                "text_elements": []
+              }
+            ],
+            "clientUserMessageId": "probe-dedup-fixed-id"
+          }
+        }
+      },
+      {
+        "id": 6,
+        "result": {
+          "queuedSubmission": {
+            "id": "01a0af00-120b-7961-ac06-1d51824dceab",
+            "input": [
+              {
+                "type": "text",
+                "text": "DUPLICATE_PROBE",
+                "text_elements": []
+              }
+            ],
+            "clientUserMessageId": "probe-dedup-fixed-id"
+          }
+        }
+      }
+    ],
+    "event_methods_observed": [
+      "account/rateLimits/updated",
+      "item/agentMessage/delta",
+      "item/completed",
+      "item/started",
+      "thread/status/changed",
+      "thread/tokenUsage/updated",
+      "turn/completed",
+      "turn/started"
+    ],
+    "draft_preserved": true,
+    "reattached_tui_contains_detached_delivery": true,
+    "first_tui_contains_second_thread_message": false,
+    "reconnected_tui_markers": [
+      "Reconnected. No input was resent.",
+      "RESTART2_INFLIGHT",
+      "RESTART2_PENDING"
+    ],
+    "permission_override_error": "Error: Permission overrides are not supported when resuming a remote task."
+  },
+  "claude": {
+    "connection_and_gate_log": [
+      "2026-09-17T10:54:36.499Z [DEBUG] MCP server \"transport-probe\": Successfully connected (transport: stdio) in 118ms",
+      "2026-09-17T10:54:36.502Z [DEBUG] MCP server \"transport-probe\": Channel notifications skipped: channels feature is not currently available"
+    ],
+    "initialization_requests": [
+      {
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {
+            "roots": {
+              "listChanged": true
+            },
+            "elicitation": {}
+          },
+          "clientInfo": {
+            "name": "claude-code",
+            "title": "Claude Code",
+            "version": "2.1.274",
+            "description": "Anthropic's agentic coding tool",
+            "websiteUrl": "https://claude.com/claude-code"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 0
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      }
+    ],
+    "model_requests_after_channel_event": 0
+  },
+  "tmux_baseline": {
+    "command": "uv run --locked python -m unittest discover -s tests -p 'test_inject_transport.py'",
+    "tests": 5,
+    "result": "OK"
+  }
+}

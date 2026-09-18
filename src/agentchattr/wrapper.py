@@ -466,6 +466,24 @@ def _report_rule_sync(server_port: int, agent_name: str, epoch: int, token: str 
         pass
 
 
+def build_trigger_prompt(entry, *, role="", rules=(), identity_hint=False):
+    """Shared wake-up text for terminal and native transports."""
+    custom = entry.get("prompt", "")
+    if isinstance(custom, str) and custom.strip():
+        prompt = custom.strip()
+    elif entry.get("job_id"):
+        prompt = f"use mcp to read job_id={entry['job_id']} - you're mentioned in a job thread, take appropriate action and respond"
+    else:
+        prompt = f"use mcp to read #{entry.get('channel', 'general')} - you're mentioned, take appropriate action and respond"
+    if role:
+        prompt += f"\n\nROLE: {role}"
+    if rules:
+        prompt += "\n\nRULES:\n" + "; ".join(rules)
+    if identity_hint:
+        prompt += _IDENTITY_HINT
+    return prompt
+
+
 def _queue_watcher(get_identity_fn, inject_fn, *, is_multi_instance: bool = False, trigger_flag=None,
                    server_port: int = 8300, agent_name: str = "", get_token_fn=None,
                    refresh_interval: int = 10):
@@ -519,12 +537,7 @@ def _queue_watcher(get_identity_fn, inject_fn, *, is_multi_instance: bool = Fals
                         except json.JSONDecodeError:
                             pass
 
-                    if custom_prompt:
-                        prompt = custom_prompt
-                    elif job_id:
-                        prompt = f"use mcp to read job_id={job_id} - you're mentioned in a job thread, take appropriate action and respond"
-                    else:
-                        prompt = f"use mcp to read #{channel} - you're mentioned, take appropriate action and respond"
+                    prompt = build_trigger_prompt({"prompt": custom_prompt, "job_id": job_id, "channel": channel})
 
                     # Use current identity (may have changed via rename)
                     current_name, _ = get_identity_fn()

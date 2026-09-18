@@ -2218,7 +2218,10 @@ async def deregister_agent(name: str, request: Request):
     elif registry and registry.is_agent_family(name):
         return JSONResponse({"error": "authenticated agent session required"}, status_code=403)
 
-    result = registry.deregister(name)
+    # Native runtimes are explicitly resumable using their stored identity.
+    base_cfg = registry.get_base_config(auth_inst["base"]) if auth_inst else {}
+    reclaimable = bool(base_cfg and base_cfg.get("transport") == "codex_native")
+    result = registry.deregister(name, reclaimable=reclaimable)
     if result is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     # Clean up runtime state (presence, activity, cursors, rename chains)

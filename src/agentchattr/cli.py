@@ -17,7 +17,11 @@ def _parser() -> argparse.ArgumentParser:
     agent.add_argument("agent", help="Agent name from configuration")
     agent.add_argument("--label", help="Custom display label")
     agent.add_argument("--no-restart", action="store_true", help="Do not restart a CLI agent on exit")
-    for command in (serve, agent):
+    agent.add_argument("--resume-runtime", help="Resume an existing native Codex runtime")
+    delivery = commands.add_parser("delivery", help="Inspect or resolve native notification delivery")
+    delivery.add_argument("action", choices=["list", "retry", "discard"])
+    delivery.add_argument("event_id", nargs="?")
+    for command in (serve, agent, delivery):
         command.add_argument("--config", type=Path, default=Path("config.toml"), help="Config file (default: ./config.toml)")
         command.add_argument("--data-dir", help="Override data directory")
         command.add_argument("--upload-dir", help="Override image upload directory")
@@ -36,20 +40,45 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if sys.platform != "linux":
         parser.error("agentchattr supports Linux only")
-    if args.command == "serve" and extra:
+    if args.command != "agent" and extra:
         parser.error("agent arguments after -- are only supported by the agent command")
     try:
         config = load_config(config_path=args.config, overrides=vars(args))
     except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError, AttributeError) as exc:
         parser.error(f"Cannot load configuration: {exc}")
-    if args.command == "serve":
+    if args.command == "delivery":
+        import json
+        from agentchattr.native_store import NativeStore
+        if (args.action == "list") != (args.event_id is None):
+            parser.error("delivery list takes no event ID; retry/discard require an event ID")
+        try:
+            store = NativeStore(config["server"]["data_dir"])
+            if args.action == "list":
+                print(json.dumps(store.listing(), indent=2))
+            else:
+                store.resolve(args.event_id, args.action)
+                print(f"Delivery {args.event_id}: {args.action}. This does not cancel any backend work.")
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+    elif args.command == "serve":
         from agentchattr import run
         run.main(config, allow_network=args.allow_network)
     else:
         agents = config.get("agents", {})
         if args.agent not in agents:
             parser.error(f"Unknown agent {args.agent!r}; configured agents: {', '.join(agents)}")
-        if agents[args.agent].get("type") == "api":
+        native = agents[args.agent].get("transport") == "codex_native"
+        if args.resume_runtime and not native:
+            parser.error("--resume-runtime requires codex_native transport")
+        if native:
+            from agentchattr import wrapper_codex
+            try:
+                wrapper_codex.main(config, args, extra)
+            except KeyboardInterrupt:
+                print("Native Codex wrapper stopped; its runtime can be resumed.")
+            except (ValueError, OSError, RuntimeError) as exc:
+                parser.error(str(exc))
+        elif agents[args.agent].get("type") == "api":
             if extra or args.no_restart:
                 parser.error("API agents do not accept CLI pass-through arguments or --no-restart")
             from agentchattr import wrapper_api

@@ -17,6 +17,7 @@
 # [agents.codex]
 # cwd = "/absolute/path/to/project"
 # label = "My Codex"
+# transport = "codex_native"  # experimental; see docs/native-codex.md
 #
 # [server]
 # port = 8310

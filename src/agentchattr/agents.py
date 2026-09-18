@@ -32,26 +32,7 @@ class AgentTrigger:
     async def trigger(self, agent_name: str, message: str = "", channel: str = "general",
                       job_id: int | None = None, **kwargs):
         """Write to the agent's queue file. The worker terminal picks it up."""
-        queue_file = self._data_dir / f"{agent_name}_queue.jsonl"
-        self._data_dir.mkdir(parents=True, exist_ok=True)
-
-        import time
-        entry = {
-            "sender": message.split(":")[0].strip() if ":" in message else "?",
-            "text": message,
-            "time": time.strftime("%H:%M:%S"),
-            "channel": channel,
-        }
-        custom_prompt = kwargs.get("prompt", "")
-        if isinstance(custom_prompt, str) and custom_prompt.strip():
-            entry["prompt"] = custom_prompt.strip()
-        if job_id is not None:
-            entry["job_id"] = job_id
-
-        with open(queue_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
-
-        log.info("Queued @%s trigger (ch=%s, job=%s): %s", agent_name, channel, job_id, message[:80])
+        self.trigger_sync(agent_name, message, channel, job_id, **kwargs)
 
     def trigger_sync(self, agent_name: str, message: str = "", channel: str = "general",
                      job_id: int | None = None, **kwargs):
@@ -71,6 +52,14 @@ class AgentTrigger:
             entry["prompt"] = custom_prompt.strip()
         if job_id is not None:
             entry["job_id"] = job_id
+
+        inst = self._registry.get_instance(agent_name)
+        if inst:
+            cfg = self._registry.get_base_config(inst["base"]) or {}
+            if cfg.get("transport") == "codex_native":
+                from agentchattr.native_store import NativeStore
+                NativeStore(self._data_dir).enqueue(inst["identity_id"], entry)
+                return
 
         with open(queue_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")

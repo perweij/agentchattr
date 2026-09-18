@@ -16,6 +16,7 @@ dependencies = [
     "starlette>=0.36",
     "python-multipart>=0.0.9",
     "packaging>=24",
+    "websockets>=15,<18",
 ]
 
 [project.scripts]

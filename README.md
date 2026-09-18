@@ -38,7 +38,7 @@ uv run agentchattr agent codex
 
 Open **http://localhost:8300** and send a message mentioning `@claude` or `@codex`. The server must already be running when an agent connects. CLI agents each have their own tmux session; detach with `Ctrl+B, D` and reattach using the session name printed by the wrapper. The wrapper must stay running to deliver mentions and heartbeats.
 
-Stop each agent wrapper with `Ctrl+C`, then stop the server. Server shutdown does not yet stop agents; unified tmux sessions and coordinated shutdown are follow-up work.
+Stop each agent wrapper with `Ctrl+C`, then stop the server. Server shutdown does not yet stop agents. Codex also has an opt-in [native transport](docs/native-codex.md) that opens its normal terminal UI and tracks notification delivery durably. It remains experimental; tmux is the default. See the [transport evaluation](docs/transport-evaluation.md) for the comparison.
 
 Pass agent CLI arguments after `--`:
 
