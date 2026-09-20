@@ -371,6 +371,8 @@ def main(config, args, extra):
         if extra:
             raise ValueError("A resumed runtime retains its backend options; do not supply new Codex arguments")
         runtime = store.runtime(args.resume_runtime)
+        if runtime.get("kind") == "adopted":
+            raise ValueError("This runtime belongs to an adopted session; reconnect using agentchattr adopt")
         if runtime["base"] != args.agent or runtime["codex_home"] != codex_home:
             raise ValueError("Runtime belongs to a different agent or CODEX_HOME")
     else:

@@ -61,7 +61,7 @@ room_settings: dict = {
 }
 
 # Channel validation
-_CHANNEL_NAME_RE = _re.compile(r'^[a-z0-9][a-z0-9\-]{0,19}$')
+_CHANNEL_NAME_RE = _re.compile(r'^[a-z0-9][a-z0-9\-]{0,63}$')
 
 # Agent hats (persisted to data/hats.json)
 agent_hats: dict[str, str] = {}  # { agent_name: svg_string }
@@ -217,7 +217,7 @@ def _install_security_middleware(token: str, cfg: dict):
                 return await call_next(request)
 
             # Agent registration/heartbeat: loopback only (no remote agent minting).
-            if path.startswith(("/api/register", "/api/deregister/", "/api/heartbeat/")):
+            if path.startswith(("/api/register", "/api/deregister/", "/api/heartbeat/")) or path == "/api/adoption/capabilities":
                 client_ip = request.client.host if request.client else ""
                 if client_ip not in ("127.0.0.1", "::1", "localhost"):
                     return JSONResponse(
@@ -238,7 +238,7 @@ def _install_security_middleware(token: str, cfg: dict):
             # Allow registered agents to authenticate via Bearer token
             # for /api/messages and /api/send (no browser session needed).
             auth_header = request.headers.get("authorization", "")
-            if auth_header.lower().startswith("bearer ") and (path in ("/api/messages", "/api/send") or path.startswith("/api/rules/")):
+            if auth_header.lower().startswith("bearer ") and (path in ("/api/messages", "/api/send", "/api/adoption/chat") or path.startswith("/api/rules/")):
                 bearer = auth_header[7:].strip()
                 if _self.registry and _self.registry.resolve_token(bearer):
                     return await call_next(request)
@@ -315,6 +315,7 @@ def configure(cfg: dict, session_token: str = ""):
         default_mention=cfg.get("routing", {}).get("default", "none"),
         max_hops=max_hops,
         online_checker=lambda: set(registry.get_active_names()) if registry else set(),
+        membership_checker=lambda name, channel: registry.in_channel(name, channel),
     )
     agents = AgentTrigger(registry, data_dir=data_dir)
 
@@ -858,6 +859,8 @@ async def _handle_new_message(msg: dict):
         else:
             targets.append(t)
     targets = list(dict.fromkeys(targets))  # dedupe, preserve order
+    if registry:
+        targets = [target for target in targets if registry.in_channel(target, channel)]
 
     if router.is_paused(channel):
         # Only emit the loop guard notice once per pause
@@ -1437,6 +1440,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 idx = room_settings["channels"].index(old_name)
                 room_settings["channels"][idx] = new_name
                 store.rename_channel(old_name, new_name)
+                registry.rename_channel(old_name, new_name)
+                for root, channel in room_settings.get("project_channels", {}).items():
+                    if channel == old_name:
+                        room_settings["project_channels"][root] = new_name
                 from agentchattr import mcp_bridge
                 mcp_bridge.migrate_cursors_rename(old_name, new_name)
                 _save_settings()
@@ -1459,7 +1466,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 if name not in room_settings["channels"]:
                     continue
+                if any(name in i["channels"] for i in registry.get_all().values()):
+                    await websocket.send_text(json.dumps({"type": "error", "error": "Move connected agents out of this channel before deleting it."}))
+                    continue
                 room_settings["channels"].remove(name)
+                room_settings["project_channels"] = {root: ch for root, ch in room_settings.get("project_channels", {}).items() if ch != name}
                 store.delete_channel(name)
                 from agentchattr import mcp_bridge
                 mcp_bridge.migrate_cursors_delete(name)
@@ -1594,6 +1605,8 @@ async def api_send(request: Request):
         return JSONResponse({"error": "text is required"}, status_code=400)
     channel = body.get("channel", "general")
 
+    if channel not in inst["channels"]:
+        return JSONResponse({"error": "agent has not joined that channel"}, status_code=403)
     msg = store.add(sender, text, channel=channel)
     return JSONResponse(msg)
 
@@ -1921,7 +1934,7 @@ async def trigger_agent_silent(request: Request):
     for target in targets:
         if agents.is_available(target):
             await agents.trigger(target, message=message, channel=channel, prompt=custom_prompt)
-    return {"ok": True, "triggered": targets}
+    return {"ok": True, "triggered": [t for t in targets if not registry or registry.in_channel(t, channel)]}
 
 
 @app.post("/api/jobs")
@@ -2173,9 +2186,47 @@ async def register_agent(request: Request):
     label = body.get("label")
     if not base:
         return JSONResponse({"error": "base is required"}, status_code=400)
-    result = registry.register(base, label)
+    try:
+        context = {}
+        channels = body.get("channels")
+        adoption = body.get("adoption")
+        if adoption is not None:
+            from agentchattr.adoption import inspect_pane
+            from agentchattr.projects import project_context, validate_channels
+            target = adoption["target"]
+            actual = inspect_pane(target["pane"], target["socket"])
+            if actual != target or actual["base"] != base:
+                raise ValueError("Adoption target changed; inspect the pane and try again")
+            project = project_context(actual["cwd"])
+            project_channels = room_settings.get("project_channels", {})
+            channels = validate_channels(adoption.get("channels") or [
+                project_channels.get(project["project_root"], project["project_channel"])])
+            if adoption["notify"] not in ("manual", "tmux", "codex"):
+                raise ValueError("Unsupported adoption notification mode")
+            context = {**project, "source": "adopted", "adoption_target": target["key"],
+                       "notify": adoption["notify"]}
+            if adoption["notify"] == "codex":
+                if base != "codex" or not isinstance(adoption.get("remote"), str) or not adoption["remote"].startswith("unix:///") or not adoption.get("thread"):
+                    raise ValueError("Native adoption requires an explicit Codex socket and thread")
+                context["adoption_thread"] = str(Path(adoption["remote"][7:]).resolve()) + ":" + adoption["thread"]
+        result = registry.register(base, label, channels=channels, context=context)
+    except (ValueError, KeyError, TypeError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     if result is None:
         return JSONResponse({"error": f"unknown base: {base}"}, status_code=400)
+    if adoption is not None:
+        result["data_dir"] = str(Path(config["server"]["data_dir"]).resolve())
+        if not adoption.get("channels"):
+            room_settings.setdefault("project_channels", {})[context["project_root"]] = result["channels"][0]
+    changed = adoption is not None
+    for channel in result["channels"]:
+        if channel not in room_settings["channels"]:
+            room_settings["channels"].append(channel)
+            changed = True
+    if changed:
+        _save_settings()
+        if _event_loop:
+            asyncio.run_coroutine_threadsafe(broadcast_settings(), _event_loop)
     # Touch presence so the instance doesn't immediately time out
     from agentchattr import mcp_bridge
     with mcp_bridge._presence_lock:
@@ -2206,6 +2257,71 @@ async def register_agent(request: Request):
     return JSONResponse(result)
 
 
+@app.get("/api/adoption/capabilities")
+async def adoption_capabilities():
+    return {"protocol": 1, "notifications": ["manual", "tmux", "codex"],
+            "data_dir": str(Path(config["server"]["data_dir"]).resolve())}
+
+
+@app.patch("/api/agents/{name}/channels")
+async def set_agent_channels(name: str, request: Request):
+    try:
+        body = await request.json()
+        from agentchattr.projects import validate_channels
+        channels = validate_channels(body.get("channels"))
+        if any(c not in room_settings["channels"] for c in channels):
+            raise ValueError("Create the channel before joining it")
+        registry.set_channels(name, channels)
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/adoption/chat")
+async def adopted_chat(request: Request):
+    """Use the existing chat tools with an identity fixed by a private token."""
+    inst = _resolve_authenticated_agent(request)
+    if not inst or inst.get("context", {}).get("source") != "adopted":
+        return JSONResponse({"error": "adopted agent authentication required"}, status_code=403)
+    from agentchattr import mcp_bridge
+    from agentchattr.native_store import NativeStore
+    from mcp.server.fastmcp import Context
+    from types import SimpleNamespace
+    try:
+        body = await request.json()
+        action = body.get("action")
+        channel = body.get("channel") or inst["channels"][0]
+        job_id = int(body.get("job_id", 0))
+        if job_id:
+            job = jobs.get(job_id)
+            if not job:
+                raise ValueError("Job not found")
+            channel = job.get("channel", "general")
+        if channel not in inst["channels"]:
+            raise ValueError("Agent has not joined that channel")
+        ctx = Context(request_context=SimpleNamespace(request=request))
+        if action == "read":
+            native = NativeStore(config["server"]["data_dir"])
+            pending = native.deliveries(inst["identity_id"], open_only=True)
+            result = mcp_bridge.chat_read(sender=inst["name"], channel=channel, job_id=job_id,
+                                          limit=max(1, min(100, int(body.get("limit", 20)))), ctx=ctx)
+            for row in pending:
+                payload = json.loads(row["payload"])
+                if inst["context"]["notify"] == "manual" and row["state"] == "pending" and payload.get("channel") == channel and (payload.get("job_id") or 0) == job_id:
+                    native.transition(row["id"], "delivered", expected_state="pending", detail="Agent read the addressed conversation through the chat bridge")
+        elif action == "send":
+            message = body.get("message", "")
+            if not isinstance(message, str) or not message.strip():
+                raise ValueError("Reply text is required")
+            result = mcp_bridge.chat_send(sender=inst["name"], message=message, channel=channel,
+                                          job_id=job_id, choices=[], ctx=ctx)
+        else:
+            raise ValueError("Expected read or send")
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse({"result": result, "name": inst["name"], "channel": channel})
+
+
 @app.post("/api/deregister/{name}")
 async def deregister_agent(name: str, request: Request):
     """Wrapper calls this on shutdown to remove its instance."""
@@ -2220,7 +2336,13 @@ async def deregister_agent(name: str, request: Request):
 
     # Native runtimes are explicitly resumable using their stored identity.
     base_cfg = registry.get_base_config(auth_inst["base"]) if auth_inst else {}
-    reclaimable = bool(base_cfg and base_cfg.get("transport") == "codex_native")
+    reclaimable = bool(base_cfg and base_cfg.get("transport") == "codex_native"
+                       and auth_inst.get("context", {}).get("source") != "adopted")
+    if auth_inst and auth_inst.get("context", {}).get("source") == "adopted":
+        try:
+            reclaimable = (await request.json()).get("recoverable") is True
+        except (ValueError, AttributeError):
+            pass
     result = registry.deregister(name, reclaimable=reclaimable)
     if result is None:
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -2330,6 +2452,7 @@ async def heartbeat(agent_name: str, request: Request):
                 canonical = inst["name"]
         if inst:
             resp["name"] = inst["name"]
+            resp["channels"] = inst["channels"]
             resp["pending"] = inst.get("state") == "pending"
             # Also update presence under the canonical name
             if canonical != current_name:
@@ -2441,7 +2564,7 @@ async def start_session(request: Request):
 
     # Auto-fill cast from available agents if not fully provided
     if not cast:
-        online = registry.get_active_names() if registry else []
+        online = [name for name in registry.get_active_names() if registry.in_channel(name, channel)] if registry else []
         roles = tmpl.get("roles", [])
         cast = _auto_cast(roles, online, started_by)
         if not cast:
@@ -2450,6 +2573,8 @@ async def start_session(request: Request):
                 status_code=400,
             )
 
+    if registry and any(registry.is_registered(name) and not registry.in_channel(name, channel) for name in cast.values()):
+        return JSONResponse({"error": "all assigned agents must join the session channel"}, status_code=400)
     session = session_engine.start_session(template_id, channel, cast, started_by, goal)
     if not session:
         return JSONResponse({"error": "could not start session (one may already be active)"}, status_code=409)

@@ -60,7 +60,7 @@ class CliTests(unittest.TestCase):
         agent.assert_called_once()
 
     def test_help_does_not_require_configuration(self):
-        for args in (["--help"], ["serve", "--help"], ["agent", "--help"]):
+        for args in (["--help"], ["serve", "--help"], ["agent", "--help"], ["adopt", "--help"], ["chat", "--help"]):
             with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as error:
                 cli.main(args)
             self.assertEqual(error.exception.code, 0)

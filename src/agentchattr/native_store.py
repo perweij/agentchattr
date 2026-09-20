@@ -119,14 +119,18 @@ class NativeStore:
             rows = db.execute("SELECT * FROM deliveries" + where + " ORDER BY seq", params).fetchall()
         return [dict(row) for row in rows]
 
-    def transition(self, event_id, state, **fields):
+    def transition(self, event_id, state, *, expected_state=None, **fields):
         allowed = {"prompt", "attempt_id", "submission_id", "turn_id", "detail"}
-        if fields.keys() - allowed or state not in (*OPEN_STATES, "completed", "discarded"):
+        if fields.keys() - allowed or state not in (*OPEN_STATES, "completed", "discarded", "delivered"):
             raise ValueError("Invalid delivery update")
         with self.connect() as db:
             assignments = ["state=?", "updated=?"] + [f"{key}=?" for key in fields]
-            db.execute(f"UPDATE deliveries SET {', '.join(assignments)} WHERE id=?",
-                       [state, time.time(), *fields.values(), event_id])
+            condition = " AND state=?" if expected_state is not None else ""
+            updated = db.execute(f"UPDATE deliveries SET {', '.join(assignments)} WHERE id=?{condition}",
+                                 [state, time.time(), *fields.values(), event_id,
+                                  *([expected_state] if expected_state is not None else [])])
+            if expected_state is not None and not updated.rowcount:
+                return False
             row = db.execute("SELECT * FROM deliveries WHERE id=?", (event_id,)).fetchone()
             if row is None:
                 raise ValueError(f"Unknown delivery: {event_id}")
@@ -136,6 +140,7 @@ class NativeStore:
                                            row["turn_id"], row["detail"], time.time()))
         log.info("Native delivery %s %s submission=%s turn=%s", event_id, state,
                  row["submission_id"], row["turn_id"])
+        return True
 
     def resolve(self, event_id, action):
         with self.connect() as db:

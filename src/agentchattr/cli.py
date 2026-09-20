@@ -11,6 +11,8 @@ from agentchattr.config_loader import load_config
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentchattr", description="Local agent coordination forum (Linux)")
     commands = parser.add_subparsers(dest="command", required=True)
+    from agentchattr.adoption import add_commands
+    add_commands(commands)
     serve = commands.add_parser("serve", help="Start the web UI and MCP servers")
     serve.add_argument("--allow-network", action="store_true", help="Allow non-localhost binding (with confirmation)")
     agent = commands.add_parser("agent", help="Connect a configured CLI or API agent to a running server")
@@ -42,6 +44,15 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("agentchattr supports Linux only")
     if args.command != "agent" and extra:
         parser.error("agent arguments after -- are only supported by the agent command")
+    if args.command in ("adopt", "chat"):
+        from agentchattr import adoption
+        try:
+            (adoption.run if args.command == "adopt" else adoption.chat)(args)
+        except KeyboardInterrupt:
+            print("Disconnected from agentchattr; the adopted agent is still running.")
+        except (ValueError, OSError, RuntimeError) as exc:
+            parser.error(str(exc))
+        return
     try:
         config = load_config(config_path=args.config, overrides=vars(args))
     except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError, AttributeError) as exc:

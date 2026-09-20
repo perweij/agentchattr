@@ -181,7 +181,7 @@ function _showSidebarRenameDialog(oldName) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.maxLength = 20;
+    input.maxLength = 64;
     input.value = oldName;
     wrapper.appendChild(input);
 
@@ -193,7 +193,7 @@ function _showSidebarRenameDialog(oldName) {
     confirm.title = 'Rename';
     confirm.onclick = () => {
         const newName = input.value.trim().toLowerCase();
-        if (!newName || !/^[a-z0-9][a-z0-9\-]{0,19}$/.test(newName)) return;
+        if (!newName || !/^[a-z0-9][a-z0-9\-]{0,63}$/.test(newName)) return;
         if (newName !== oldName) {
             window.ws.send(JSON.stringify({ type: 'channel_rename', old_name: oldName, new_name: newName }));
             if (window.activeChannel === oldName) {
@@ -351,7 +351,7 @@ function showChannelCreateDialog() {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.maxLength = 20;
+    input.maxLength = 64;
     input.placeholder = 'channel-name';
     wrapper.appendChild(input);
 
@@ -385,7 +385,7 @@ function showChannelCreateDialog() {
 
 function _submitInlineCreate(input, wrapper) {
     const name = input.value.trim().toLowerCase();
-    if (!name || !/^[a-z0-9][a-z0-9\-]{0,19}$/.test(name)) return;
+    if (!name || !/^[a-z0-9][a-z0-9\-]{0,63}$/.test(name)) return;
     if (window.channelList.includes(name)) { input.focus(); return; }
     window._setPendingChannelSwitch(name);
     window.ws.send(JSON.stringify({ type: 'channel_create', name }));
@@ -413,7 +413,7 @@ function showChannelRenameDialog(oldName) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.maxLength = 20;
+    input.maxLength = 64;
     input.value = oldName;
     wrapper.appendChild(input);
 
@@ -428,7 +428,7 @@ function showChannelRenameDialog(oldName) {
     confirm.title = 'Rename';
     confirm.onclick = () => {
         const newName = input.value.trim().toLowerCase();
-        if (!newName || !/^[a-z0-9][a-z0-9\-]{0,19}$/.test(newName)) return;
+        if (!newName || !/^[a-z0-9][a-z0-9\-]{0,63}$/.test(newName)) return;
         if (newName !== oldName) {
             window.ws.send(JSON.stringify({ type: 'channel_rename', old_name: oldName, new_name: newName }));
             if (window.activeChannel === oldName) {

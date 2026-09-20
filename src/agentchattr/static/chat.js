@@ -426,6 +426,10 @@ function renderHistoryBatch() {
 // --- WebSocket ---
 
 function handleServerEvent(event) {
+    if (event.type === 'error') {
+        showToast(event.error || 'The request could not be completed.', 'error');
+        return;
+    }
     if (historyLoading && ['message', 'edit', 'message_update', 'delete', 'clear', 'channel_renamed', 'agent_renamed'].includes(event.type)) {
         pendingLiveEvents.push(event);
         return;
@@ -1305,7 +1309,10 @@ function buildStatusPills() {
         pill.id = `status-${name}`;
         pill.title = `@${name}`;  // Tooltip: canonical name for manual @-typing
         pill.style.setProperty('--agent-color', colorOverrides[name] || cfg.color || '#4ade80');
-        pill.innerHTML = `<span class="status-dot"></span><span class="status-label">${escapeHtml(cfg.label || name)}</span>`;
+        const project = cfg.context?.project_name;
+        const displayLabel = (cfg.label || name) + (project ? ` · ${project}` : '');
+        pill.innerHTML = `<span class="status-dot"></span><span class="status-label">${escapeHtml(displayLabel)}</span>`;
+        pill.title = [cfg.context?.project_root, cfg.context?.cwd, (cfg.channels || ['general']).map(c => '#' + c).join(', ')].filter(Boolean).join('\n');
         // Left-click to toggle pill popover (rename + role + color)
         pill.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1521,6 +1528,41 @@ function showPillPopover(pillEl, opts) {
     const inputEl = popover.querySelector('.pill-popover-input');
     const confirmBtn = popover.querySelector('.pill-popover-confirm');
     const customInput = popover.querySelector('.pill-popover-custom-input');
+    const membership = document.createElement('div');
+    membership.className = 'pill-popover-section';
+    const membershipLabel = document.createElement('label');
+    membershipLabel.className = 'pill-popover-label';
+    membershipLabel.textContent = 'Channels for notifications';
+    membership.appendChild(membershipLabel);
+    const joined = new Set(agentConfig[opts.name]?.channels || ['general']);
+    for (const channel of channelList) {
+        const label = document.createElement('label');
+        label.style.display = 'block';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = joined.has(channel);
+        checkbox.value = channel;
+        label.append(checkbox, document.createTextNode(' #' + channel));
+        membership.appendChild(label);
+    }
+    const saveMembership = document.createElement('button');
+    saveMembership.textContent = 'Save channels';
+    const membershipStatus = document.createElement('p');
+    membershipStatus.setAttribute('role', 'status');
+    saveMembership.addEventListener('click', async () => {
+        const channels = [...membership.querySelectorAll('input:checked')].map(input => input.value);
+        if (!channels.length) { membershipStatus.textContent = 'Choose at least one channel.'; return; }
+        try {
+            const response = await fetch(`/api/agents/${encodeURIComponent(opts.name)}/channels`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Session-Token': SESSION_TOKEN },
+                body: JSON.stringify({ channels }),
+            });
+            const result = await response.json();
+            membershipStatus.textContent = response.ok ? 'Channels saved.' : (result.error || 'Could not save channels.');
+        } catch (_) { membershipStatus.textContent = 'Could not reach the server.'; }
+    });
+    membership.append(saveMembership, membershipStatus);
+    popover.appendChild(membership);
 
     const closePopover = () => {
         popover.remove();
@@ -2284,6 +2326,7 @@ function getMentionCandidates() {
     const candidates = [];
     for (const [name, cfg] of Object.entries(agentConfig)) {
         if (cfg.state === 'pending') continue;
+        if (!(cfg.channels || ['general']).includes(activeChannel)) continue;
         candidates.push({ name, label: cfg.label || name, color: cfg.color });
     }
     candidates.push({ name: 'all agents', label: 'all agents', color: 'var(--accent)' });
@@ -3101,6 +3144,7 @@ function renderTodosPanel() {
 window._onChannelSwitchMentions = function(oldChannel, newChannel) {
     if (oldChannel) _channelMentions[oldChannel] = [...activeMentions];
     activeMentions = new Set(_channelMentions[newChannel] || []);
+    buildMentionToggles();
     // Reflect the swapped state on the toggle buttons
     for (const btn of document.querySelectorAll('.mention-toggle')) {
         btn.classList.toggle('active', activeMentions.has(btn.dataset.agent));
@@ -3114,11 +3158,12 @@ function buildMentionToggles() {
 
     // Prune stale mentions for agents no longer in config
     for (const name of activeMentions) {
-        if (!(name in agentConfig)) activeMentions.delete(name);
+        if (!(name in agentConfig) || !(agentConfig[name].channels || ['general']).includes(activeChannel)) activeMentions.delete(name);
     }
 
     for (const [name, cfg] of Object.entries(agentConfig)) {
         if (cfg.state === 'pending') continue;  // skip pending instances
+        if (!(cfg.channels || ['general']).includes(activeChannel)) continue;
         const btn = document.createElement('button');
         btn.className = 'mention-toggle';
         btn.dataset.agent = name;

@@ -39,10 +39,14 @@ def _check_tmux():
     sys.exit(1)
 
 
-def _pane_id(tmux_session: str) -> str | None:
+def _tmux(socket_path=None):
+    return ["tmux", "-S", socket_path] if socket_path else ["tmux"]
+
+
+def _pane_id(tmux_session: str, socket_path=None) -> str | None:
     """Resolve the session's active pane once, so paste and Enter hit the same pane."""
     result = subprocess.run(
-        ["tmux", "display-message", "-p", "-t", tmux_session, "#{pane_id}"],
+        [*_tmux(socket_path), "display-message", "-p", "-t", tmux_session, "#{pane_id}"],
         capture_output=True, timeout=TMUX_COMMAND_TIMEOUT,
     )
     if result.returncode != 0:
@@ -51,12 +55,12 @@ def _pane_id(tmux_session: str) -> str | None:
     return pane or None
 
 
-def _drop_buffer(name: str) -> None:
-    subprocess.run(["tmux", "delete-buffer", "-b", name],
+def _drop_buffer(name: str, socket_path=None) -> None:
+    subprocess.run([*_tmux(socket_path), "delete-buffer", "-b", name],
                    capture_output=True, timeout=TMUX_COMMAND_TIMEOUT)
 
 
-def inject(text: str, *, tmux_session: str, delay: float = 0.3) -> bool:
+def inject(text: str, *, tmux_session: str, delay: float = 0.3, socket_path=None, before_send=None) -> bool:
     """Deliver text to the agent CLI as ONE bracketed paste, then press Enter.
 
     Why a paste and not send-keys: a pty's raw input queue is finite (1024
@@ -79,49 +83,54 @@ def inject(text: str, *, tmux_session: str, delay: float = 0.3) -> bool:
     """
     buffer_name = f"agentchattr-inject-{os.getpid()}-{uuid.uuid4().hex[:8]}"
     try:
-        return _deliver(text, tmux_session, buffer_name, delay)
+        return _deliver(text, tmux_session, buffer_name, delay, socket_path, before_send)
     except Exception as exc:  # launching tmux itself failed, not a non-zero exit
         print(f"  INJECT FAILED: {type(exc).__name__}: {exc}")
         try:
-            _drop_buffer(buffer_name)
+            _drop_buffer(buffer_name, socket_path)
         except Exception:
             pass
         return False
 
 
-def _deliver(text: str, tmux_session: str, buffer_name: str, delay: float) -> bool:
+def _deliver(text: str, tmux_session: str, buffer_name: str, delay: float, socket_path=None, before_send=None) -> bool:
     """The paste-then-Enter sequence; every tmux exit status is checked."""
-    pane = _pane_id(tmux_session)
+    pane = _pane_id(tmux_session) if socket_path is None else _pane_id(tmux_session, socket_path)
     if pane is None:
         print(f"  INJECT FAILED: no pane for tmux session {tmux_session!r}")
         return False
 
     loaded = subprocess.run(
-        ["tmux", "load-buffer", "-b", buffer_name, "-"],
+        [*_tmux(socket_path), "load-buffer", "-b", buffer_name, "-"],
         input=text.encode("utf-8"),
         capture_output=True, timeout=TMUX_COMMAND_TIMEOUT,
     )
     if loaded.returncode != 0:
         print(f"  INJECT FAILED: load-buffer exit {loaded.returncode}: "
               f"{loaded.stderr.decode(errors='replace').strip()}")
-        _drop_buffer(buffer_name)
+        _drop_buffer(buffer_name, socket_path)
         return False
 
     # -p: bracket the paste if the pane asked for it; -d: drop the buffer after.
+    if before_send and not before_send():
+        _drop_buffer(buffer_name, socket_path)
+        return False
     pasted = subprocess.run(
-        ["tmux", "paste-buffer", "-p", "-d", "-b", buffer_name, "-t", pane],
+        [*_tmux(socket_path), "paste-buffer", "-p", "-d", "-b", buffer_name, "-t", pane],
         capture_output=True, timeout=TMUX_COMMAND_TIMEOUT,
     )
     if pasted.returncode != 0:
         print(f"  INJECT FAILED: paste-buffer exit {pasted.returncode}: "
               f"{pasted.stderr.decode(errors='replace').strip()}")
-        _drop_buffer(buffer_name)
+        _drop_buffer(buffer_name, socket_path)
         return False
 
     # Scale delay with text length so longer prompts get more processing time
     time.sleep(max(delay, len(text) * 0.001))
+    if before_send and not before_send():
+        return False
     entered = subprocess.run(
-        ["tmux", "send-keys", "-t", pane, "Enter"],
+        [*_tmux(socket_path), "send-keys", "-t", pane, "Enter"],
         capture_output=True, timeout=TMUX_COMMAND_TIMEOUT,
     )
     if entered.returncode != 0:

@@ -25,6 +25,8 @@ class AgentTrigger:
                 "label": info["label"],
                 "color": info["color"],
                 "role": get_role(name),
+                "context": info.get("context", {}),
+                "channels": info.get("channels", ["general"]),
             }
             for name, info in instances.items()
         }
@@ -37,6 +39,9 @@ class AgentTrigger:
     def trigger_sync(self, agent_name: str, message: str = "", channel: str = "general",
                      job_id: int | None = None, **kwargs):
         """Synchronous version of trigger — writes to queue file without async."""
+        if not self._registry.in_channel(agent_name, channel):
+            log.info("Skipped @%s notification outside membership in #%s", agent_name, channel)
+            return
         queue_file = self._data_dir / f"{agent_name}_queue.jsonl"
         self._data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +61,7 @@ class AgentTrigger:
         inst = self._registry.get_instance(agent_name)
         if inst:
             cfg = self._registry.get_base_config(inst["base"]) or {}
-            if cfg.get("transport") == "codex_native":
+            if cfg.get("transport") == "codex_native" or inst.get("context", {}).get("source") == "adopted":
                 from agentchattr.native_store import NativeStore
                 NativeStore(self._data_dir).enqueue(inst["identity_id"], entry)
                 return

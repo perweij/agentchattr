@@ -29,6 +29,8 @@ class Instance:
     epoch: int = 1
     state: str = "pending"   # "pending" | "active"
     registered_at: float = field(default_factory=time.time)
+    context: dict = field(default_factory=dict)
+    channels: list[str] = field(default_factory=lambda: ["general"])
 
 
 class RuntimeRegistry:
@@ -183,15 +185,30 @@ class RuntimeRegistry:
 
     # --- Registration ---
 
-    def register(self, base: str, label: str | None = None) -> dict | None:
+    def register(self, base: str, label: str | None = None, *, context=None, channels=None) -> dict | None:
         """Register a new instance of `base`. Returns slot info or None if unknown base.
 
         When a 2nd instance registers, slot 1 is renamed from 'base' to 'base-1'
         to prevent identity ambiguity. The rename info is returned as '_renamed_slot1'.
         """
+        from agentchattr.projects import validate_channels
+        if channels is not None:
+            channels = validate_channels(channels)
         with self._lock:
             if base not in self._bases:
                 return None
+            if channels is None:
+                channels = validate_channels(self._bases[base].get("channels", ["general"]))
+
+            context = dict(context or {})
+            target = context.get("adoption_target")
+            if target and any(i.context.get("adoption_target") == target
+                              for i in (*self._instances.values(), *self._reclaimable.values())):
+                raise ValueError("This terminal is already adopted; detach its existing connection first")
+            thread = context.get("adoption_thread")
+            if thread and any(i.context.get("adoption_thread") == thread
+                              for i in (*self._instances.values(), *self._reclaimable.values())):
+                raise ValueError("This Codex conversation is already adopted")
 
             self._expire_reserved()
 
@@ -240,6 +257,8 @@ class RuntimeRegistry:
             # not block on a manual confirmation step.
             state = "active"
             inst = Instance(name=name, base=base, slot=slot, label=lbl, color=color, state=state)
+            inst.context = context
+            inst.channels = channels
             self._instances[name] = inst
             # Fresh registration (plus any slot-1 rename above) supersedes reclaimable
             # identities sharing those names/(base, slot) coordinates — including custom
@@ -523,9 +542,34 @@ class RuntimeRegistry:
         """For WebSocket 'agents' message: {name: {color, label, base, state}}."""
         with self._lock:
             return {
-                n: {"color": i.color, "label": i.label, "base": i.base, "state": i.state}
+                n: {"color": i.color, "label": i.label, "base": i.base, "state": i.state,
+                    "context": dict(i.context), "channels": list(i.channels)}
                 for n, i in self._instances.items()
             }
+
+    def in_channel(self, name: str, channel: str) -> bool:
+        """Family aliases are eligible only when a member belongs to the channel."""
+        with self._lock:
+            if name in self._instances:
+                return channel in self._instances[name].channels
+            return any(i.base == name and channel in i.channels for i in self._instances.values())
+
+    def set_channels(self, name, channels):
+        from agentchattr.projects import validate_channels
+        channels = validate_channels(channels)
+        with self._lock:
+            if name not in self._instances:
+                raise ValueError("Agent is no longer connected")
+            self._instances[name].channels = channels
+        self._save_instances()
+        self._notify()
+
+    def rename_channel(self, old, new):
+        with self._lock:
+            for inst in (*self._instances.values(), *self._reclaimable.values()):
+                inst.channels = list(dict.fromkeys(new if c == old else c for c in inst.channels))
+        self._save_instances()
+        self._notify()
 
     def get_all_names(self) -> list[str]:
         with self._lock:
@@ -734,6 +778,7 @@ def _inst_dict(inst: Instance, include_token: bool = False) -> dict:
         "label": inst.label, "color": inst.color, "state": inst.state,
         "epoch": inst.epoch,
         "registered_at": inst.registered_at,
+        "context": dict(inst.context), "channels": list(inst.channels),
     }
     if include_token:
         d["token"] = inst.token
@@ -746,6 +791,7 @@ def _inst_full(inst: Instance) -> dict:
         "name": inst.name, "base": inst.base, "slot": inst.slot, "label": inst.label,
         "color": inst.color, "identity_id": inst.identity_id, "token": inst.token,
         "epoch": inst.epoch, "state": inst.state, "registered_at": inst.registered_at,
+        "context": inst.context, "channels": inst.channels,
     }
 
 
@@ -755,6 +801,7 @@ def _inst_from_dict(d: dict) -> Instance:
         color=d["color"], identity_id=d.get("identity_id", uuid.uuid4().hex),
         token=d["token"], epoch=int(d.get("epoch", 1)), state=d.get("state", "active"),
         registered_at=float(d.get("registered_at", time.time())),
+        context=d.get("context", {}), channels=d.get("channels", ["general"]),
     )
 
 

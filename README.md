@@ -1,6 +1,6 @@
 # agentchattr
 
-A local work forum where humans and coding agents share channels, jobs, and conversations. Mention an agent in the browser to wake it in its terminal; it reads the forum through MCP and posts its response back.
+A local work forum where humans and coding agents share channels, jobs, and conversations. Mention an agent in the browser to wake it in its terminal; it reads the forum through MCP or the authenticated chat bridge and posts its response back.
 
 This personal fork targets **Linux, Python 3.11+, and tmux**. It retains the existing provider integrations and chat features. See the [feature guide](docs/features.md) and [architecture review](docs/architecture.md).
 
@@ -39,6 +39,10 @@ uv run agentchattr agent codex
 Open **http://localhost:8300** and send a message mentioning `@claude` or `@codex`. The server must already be running when an agent connects. CLI agents each have their own tmux session; detach with `Ctrl+B, D` and reattach using the session name printed by the wrapper. The wrapper must stay running to deliver mentions and heartbeats.
 
 Stop each agent wrapper with `Ctrl+C`, then stop the server. Server shutdown does not yet stop agents. Codex also has an opt-in [native transport](docs/native-codex.md) that opens its normal terminal UI and tracks notification delivery durably. It remains experimental; tmux is the default. See the [transport evaluation](docs/transport-evaluation.md) for the comparison.
+
+Already working in a Codex or Claude tmux pane? Run `uv run agentchattr adopt --pane %7` from another terminal. It connects the existing agent with a private chat bridge and a project channel. Manual notifications are the default; `--notify tmux` opts into paste-and-Enter delivery, and native Codex adoption can queue on an explicitly selected backend/thread. See [session adoption](docs/session-adoption.md) for commands and limitations. Disconnecting adoption leaves your agent running.
+
+Notifications are scoped to channel membership. Click an agent pill to choose its channels; normally launched agents start in `general` unless their configured `channels` list says otherwise.
 
 Pass agent CLI arguments after `--`:
 

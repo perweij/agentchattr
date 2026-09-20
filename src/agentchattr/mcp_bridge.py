@@ -89,7 +89,8 @@ _MCP_INSTRUCTIONS = (
     "propose it as a rule via chat_rules(action='propose'). Keep rules short and imperative (max 160 chars). "
     "Don't propose trivial or session-specific things. chat_decision is an alias for chat_rules (backward compat).\n\n"
     "Messages belong to channels (default: 'general'). Use the 'channel' parameter in chat_send and "
-    "chat_read to target a specific channel. Omit channel or pass empty string to read from all channels.\n\n"
+    "chat_read to target a specific channel. Registered agents default to their first joined channel. "
+    "Read and reply in the channel named by your notification. Ask the human to add channel membership when needed.\n\n"
     "If you are addressed in chat, respond in chat — use chat_send to reply in the same channel. "
     "Do not take the answer back to your terminal session. "
     "If the latest message in a channel is addressed to you (or all agents), treat it as your active task "
@@ -231,9 +232,14 @@ def chat_send(
             job_id = fallback_job
         elif fallback_channel:
             channel = fallback_channel
-    # Final fallback if still nothing: original 'general' behavior.
+    # Final fallback: the instance's first joined channel, otherwise general.
     if not channel and not job_id:
-        channel = "general"
+        inst = registry.get_instance(sender) if registry else None
+        channel = inst["channels"][0] if inst else "general"
+    inst = registry.get_instance(sender) if registry else None
+    target_channel = (jobs.get(job_id) or {}).get("channel", "general") if job_id and jobs else channel
+    if inst and target_channel not in inst["channels"]:
+        return "Error: agent has not joined that channel. Ask the human to update channel membership."
     # Block pending instances (identity not yet confirmed)
     if registry and registry.is_pending(sender):
         return "Error: identity not confirmed. Call chat_claim(sender=your_base_name) to get your identity."
@@ -586,12 +592,19 @@ def chat_read(
     - Subsequent calls with same sender: returns only NEW messages since last read.
     - Pass since_id to override and read from a specific point.
     - Omit sender to always get the last `limit` messages (no cursor).
-    - Pass channel to filter by channel name (default: all channels).
+    - Pass channel to filter by channel name (registered agents default to their first joined channel).
     - Pass job_id to read a specific job. Job reads return a header entry first,
       including title and body, followed by the thread messages."""
     sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=False)
     if err:
         return err
+
+    inst = registry.get_instance(sender) if registry else None
+    if inst:
+        channel = channel or inst["channels"][0]
+        target_channel = (jobs.get(job_id) or {}).get("channel", "general") if job_id and jobs else channel
+        if target_channel not in inst["channels"]:
+            return "Error: agent has not joined that channel. Ask the human to update channel membership."
 
     # Job-scoped read: return job metadata plus the thread messages
     if job_id and jobs:
@@ -973,4 +986,3 @@ def run_http_server():
 def run_sse_server():
     """Block — run SSE MCP in a background thread."""
     mcp_sse.run(transport="sse")
-

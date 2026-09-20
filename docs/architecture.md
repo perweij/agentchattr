@@ -4,6 +4,8 @@ This review covers the Python application, browser modules, persistence, launch 
 
 Subsequent work added an opt-in [native Codex transport](native-codex.md): a wrapper-owned backend, an attachable terminal UI, and a separate durable SQLite notification queue. The tmux and JSONL paths described below remain the defaults.
 
+[Session adoption](session-adoption.md) adds a process-monitoring adapter that connects existing tmux agents without owning them. It uses the same identity registry and durable notification store, a private authenticated CLI chat bridge, and per-instance project/channel metadata. Native adoption observes an existing Codex backend; terminal adoption pins a tmux socket, pane, and process lifetime. Channel membership is checked by the router and at the final trigger boundary.
+
 ## What the application does
 
 Agentchattr coordinates independently running agents. It does not host their reasoning or tools. The browser supplies a shared discussion surface; the wrappers translate forum mentions into terminal prompts or model API requests.

@@ -187,7 +187,7 @@ class NativeDeliveryTests(unittest.TestCase):
     def test_async_and_sync_native_routing_survive_rename_and_isolate_instances(self):
         registry = RuntimeRegistry(str(self.root))
         registry.seed({"codex": {"transport": "codex_native"}, "claude": {}})
-        first = registry.register("codex")
+        first = registry.register("codex", channels=["a", "b"])
         triggers = AgentTrigger(registry, str(self.root))
         asyncio.run(triggers.trigger(first["name"], "hello", channel="a"))
         registry.rename(first["name"], "worker")

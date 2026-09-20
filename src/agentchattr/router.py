@@ -5,11 +5,12 @@ import re
 
 class Router:
     def __init__(self, agent_names: list[str], default_mention: str = "both",
-                 max_hops: int = 4, online_checker=None):
+                 max_hops: int = 4, online_checker=None, membership_checker=None):
         self.agent_names = set(n.lower() for n in agent_names)
         self.default_mention = default_mention
         self.max_hops = max_hops
         self._online_checker = online_checker  # callable() -> set of online agent names
+        self._membership_checker = membership_checker
         # Per-channel state: { channel: { hop_count, paused, guard_emitted } }
         self._channels: dict[str, dict] = {}
         self._build_pattern()
@@ -53,6 +54,8 @@ class Router:
         """Determine which agents should receive this message."""
         ch = self._get_ch(channel)
         mentions = self.parse_mentions(text)
+        def members(names):
+            return [n for n in names if not self._membership_checker or self._membership_checker(n, channel)]
 
         if not self._is_agent(sender):
             # Human message resets hop counter and unpauses
@@ -61,11 +64,11 @@ class Router:
             ch["guard_emitted"] = False
             if not mentions:
                 if self.default_mention in ("both", "all"):
-                    return list(self.agent_names)
+                    return members(self.agent_names)
                 elif self.default_mention == "none":
                     return []
-                return [self.default_mention]
-            return mentions
+                return members([self.default_mention])
+            return members(mentions)
         else:
             # Agent message: blocked while loop guard is active
             if ch["paused"]:
@@ -78,7 +81,7 @@ class Router:
                 ch["paused"] = True
                 return []
             # Don't route back to self
-            return [m for m in mentions if m != sender]
+            return members([m for m in mentions if m != sender])
 
     def continue_routing(self, channel: str = "general"):
         """Resume after loop guard pause."""
