@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Run from a Fleet checkout, including through an absolute command symlink."""
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(__file__).resolve().parents[1]
+sys.dont_write_bytecode = True
+if sys.version_info < (3, 11):
+    sys.exit("agentchattr requires Python 3.11 or newer")
+
+# Parsing/help uses only the standard library: no environment creation or downloads.
+arguments = sys.argv[1:]
+parse_arguments = arguments[:arguments.index("--")] if "--" in arguments else arguments
+if not arguments or "--help" in parse_arguments or "-h" in parse_arguments:
+    sys.path.insert(0, str(root / "src"))
+    from agentchattr.cli import main
+    main(arguments)
+else:
+    uv = shutil.which("uv")
+    if not uv:
+        sys.exit("agentchattr requires uv on PATH (a Fleet external requirement)")
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    checkout_id = hashlib.sha256(os.fsencode(root)).hexdigest()[:16]
+    env = dict(os.environ)
+    env["UV_PROJECT_ENVIRONMENT"] = str((cache / "agentchattr" / checkout_id / "venv").resolve())
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    os.execve(uv, [uv, "run", "--project", str(root), "--locked", "--no-dev",
+                   "--", "python", "-m", "agentchattr", *arguments], env)

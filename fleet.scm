@@ -1,0 +1,5 @@
+((manifest . 1)
+ (name . agentchattr)
+ (command . "agentchattr")
+ (executable . "bin/agentchattr")
+ (requires . (python3 coreutils git tmux xdg-utils)))

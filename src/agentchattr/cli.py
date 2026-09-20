@@ -24,7 +24,7 @@ def _parser() -> argparse.ArgumentParser:
     delivery.add_argument("action", choices=["list", "retry", "discard"])
     delivery.add_argument("event_id", nargs="?")
     for command in (serve, agent, delivery):
-        command.add_argument("--config", type=Path, default=Path("config.toml"), help="Config file (default: ./config.toml)")
+        command.add_argument("--config", type=Path, help="Config file (default: ./config.toml, then XDG config, then bundled defaults)")
         command.add_argument("--data-dir", help="Override data directory")
         command.add_argument("--upload-dir", help="Override image upload directory")
         for flag in ("--port", "--mcp-http-port", "--mcp-sse-port"):

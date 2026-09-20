@@ -71,15 +71,31 @@ def load_config(root: Path | None = None, *, config_path: Path | None = None,
     """Load defaults, local settings and invocation overrides once.
 
     ``root`` is an optional config directory for library callers. CLI callers
-    supply ``config_path``. With neither, use config.toml in the current directory.
+    supply ``config_path``. Otherwise prefer local config, then XDG config,
+    then bundled defaults with XDG data and the caller's working directory.
     """
     path = (config_path or (root or Path.cwd()) / "config.toml").expanduser().resolve()
+    bundled = False
+    if config_path is None and root is None and not path.exists():
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        path = (config_home / "agentchattr" / "config.toml").expanduser().resolve()
+        if not path.exists():
+            path = Path(__file__).resolve().with_name("defaults.toml")
+            bundled = True
     with path.open("rb") as f:
         config = tomllib.load(f)
     local_path = path.with_name("config.local.toml")
-    if local_path != path and local_path.exists():
+    if not bundled and local_path != path and local_path.exists():
         with local_path.open("rb") as f:
             _merge(config, tomllib.load(f))
+
+    if bundled:
+        data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        data = (data_home / "agentchattr").expanduser().resolve()
+        config.setdefault("server", {})["data_dir"] = str(data)
+        config.setdefault("images", {})["upload_dir"] = str(data / "uploads")
+        for agent in config.get("agents", {}).values():
+            agent["cwd"] = str(Path.cwd())
 
     config.setdefault("server", {})["data_dir"] = _resolve_path(
         config.get("server", {}).get("data_dir", "./data"), path.parent)

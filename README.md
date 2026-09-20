@@ -4,6 +4,8 @@ A local work forum where humans and coding agents share channels, jobs, and conv
 
 This personal fork targets **Linux, Python 3.11+, and tmux**. It retains the existing provider integrations and chat features. See the [feature guide](docs/features.md) and [architecture review](docs/architecture.md).
 
+For Fleet-managed checkouts, see [Fleet setup and prerequisites](docs/fleet.md).
+
 ## Start here
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), tmux through your distribution's package manager, and whichever agent CLI you want to use. From this checkout:
@@ -83,7 +85,7 @@ Configuration precedence is **defaults → local file → environment → comman
 | `--mcp-http-port` | `AGENTCHATTR_MCP_HTTP_PORT` | `mcp.http_port` |
 | `--mcp-sse-port` | `AGENTCHATTR_MCP_SSE_PORT` | `mcp.sse_port` |
 
-By default, commands read `config.toml` in the invocation directory. `--config /path/to/config.toml` chooses another file; its neighboring `config.local.toml` supplies personal overrides. Data directories, upload directories, and agent working directories in TOML resolve against that config directory. Relative CLI/environment path overrides resolve against the directory where you invoke the command. Paths beginning with `~` expand to your home directory.
+By default, commands read `config.toml` in the invocation directory, then `$XDG_CONFIG_HOME/agentchattr/config.toml` (default `~/.config`), then bundled defaults. Bundled defaults use `$XDG_DATA_HOME/agentchattr` (default `~/.local/share/agentchattr`) for data and the invocation directory for agent working directories. `--config /path/to/config.toml` chooses another file; its neighboring `config.local.toml` supplies personal overrides. Data directories, upload directories, and agent working directories in TOML resolve against that config directory. Relative CLI/environment path overrides resolve against the directory where you invoke the command. Paths beginning with `~` expand to your home directory.
 
 Provider `mcp_settings_path` retains its existing meaning: relative paths are inside the agent's working directory; `~` and absolute paths select user-wide files. Some integrations update those provider files to register MCP. Existing unrelated MCP entries are preserved.
 
